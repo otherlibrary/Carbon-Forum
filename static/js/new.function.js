@@ -187,6 +187,7 @@ function CreateNewTopic() {
 }
 
 function CheckTag(TagName, IsAdd) {
+	TagName = $.trim(TagName);
 	var show = true;
 	var i = 1;
 	$("input[name='Tag[]']").each(function(index) {
@@ -238,7 +239,7 @@ function GetTags() {
 }
 
 function TagsListAppend(TagName, id) {
-	$("#TagsList").append('<a href="###" onclick="javascript:AddTag(\'' + TagName + '\',' + id + ');" id="TagsList' + id + '">' + TagName + '&nbsp;+</a>');
+	$("#TagsList").append('<a href="###" onclick="javascript:AddTag(\'' + TagName + '\',' + id + ');GetTags();" id="TagsList' + id + '">' + TagName + '&nbsp;+</a>');
 	//document.NewForm.AlternativeTag.focus();
 }
 

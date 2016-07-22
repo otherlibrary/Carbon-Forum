@@ -3,9 +3,12 @@ set_time_limit(0);
 //error_reporting(0); //don't show errors
 
 $Message = '';
-$Version = '5.0.1';
-$Prefix = 'carbon_';
-if(is_file('install.lock')){
+$Version = '5.6.1';
+define('PREFIX', 'carbon_');
+if (function_exists('apache_get_modules') && !in_array('mod_rewrite', apache_get_modules())){
+	die("Apache用户请先开启mod_rewrite！<br>Please enable Apache mod_rewrite! ");
+}
+if (is_file('install.lock')) {
 	die("请删除 install/install.lock 文件后再进行操作！<br>Please Remove install/install.lock before install!");
 //Exit for more security
 exit();
@@ -36,22 +39,22 @@ if($_SERVER['REQUEST_METHOD'] == 'POST'){
 		$WebsitePath = '';
 	}
 	//初始化数据库操作类
-	require('../includes/PDO.class.php');
-	$DB = new Db($DBHost, $DBName, $DBUser, $DBPassword);
+	require('../library/PDO.class.php');
+	$DB = new Db($DBHost, 3306, $DBName, $DBUser, $DBPassword);
 	//数据库安装
 	while($SQL=GetNextSQL()){
 		$DB->query($SQL);
 	}
-	$DB->query("INSERT INTO `".$Prefix."config` VALUES ('WebsitePath', '".$WebsitePath."')");
-	$DB->query("INSERT INTO `".$Prefix."config` VALUES ('LoadJqueryUrl', '".$WebsitePath."/static/js/jquery.js')");
-	$DB->query("UPDATE `".$Prefix."config` SET `ConfigValue`='".date('Y-m-d')."' WHERE `ConfigName`='DaysDate'");
-	$DB->query("UPDATE `".$Prefix."config` SET `ConfigValue`='".$Version."' WHERE `ConfigName`='Version'");
+	$DB->query("INSERT INTO `".PREFIX."config` VALUES ('WebsitePath', '".$WebsitePath."')");
+	$DB->query("INSERT INTO `".PREFIX."config` VALUES ('LoadJqueryUrl', '".$WebsitePath."/static/js/jquery.js')");
+	$DB->query("UPDATE `".PREFIX."config` SET `ConfigValue`='".date('Y-m-d')."' WHERE `ConfigName`='DaysDate'");
+	$DB->query("UPDATE `".PREFIX."config` SET `ConfigValue`='".$Version."' WHERE `ConfigName`='Version'");
 	$DB->CloseConnection();
 	fclose($fp) or die("Can’t close file");
 
 	//写入config文件
-	$ConfigPointer=fopen(__DIR__.'/config.tpl','r');
-	$ConfigBuffer=fread($ConfigPointer, filesize(__DIR__.'/config.tpl'));
+	$ConfigPointer = fopen(__DIR__.'/config.tpl','r');
+	$ConfigBuffer = fread($ConfigPointer, filesize(__DIR__.'/config.tpl'));
 	$ConfigBuffer = str_replace("{{Language}}",$Language,$ConfigBuffer);
 	$ConfigBuffer = str_replace("{{DBHost}}",$DBHost,$ConfigBuffer);
 	$ConfigBuffer = str_replace("{{DBName}}",$DBName,$ConfigBuffer);
@@ -68,9 +71,9 @@ if($_SERVER['REQUEST_METHOD'] == 'POST'){
 	fclose($ConfigPHP);
 
 	//写入htaccess文件
-	$HtaccessPointer=fopen(__DIR__.'/htaccess.tpl','r');
-	$HtaccessBuffer=fread($HtaccessPointer, filesize(__DIR__.'/htaccess.tpl'));
-	$HtaccessBuffer = str_replace("{{WebSitePath}}",$WebsitePath,$HtaccessBuffer);
+	$HtaccessPointer = fopen(__DIR__.'/htaccess.tpl', 'r');
+	$HtaccessBuffer = fread($HtaccessPointer, filesize(__DIR__.'/htaccess.tpl'));
+	$HtaccessBuffer = str_replace("{{WebSitePath}}", $WebsitePath, $HtaccessBuffer);
 	//Server Software Type
 	if(isset($_SERVER['HTTP_X_REWRITE_URL'])){//IIS(ISAPI_Rewrite)
 		$HtaccessBuffer = str_replace("{{RedirectionType}}","[QSA,NU,PT,L]",$HtaccessBuffer);
@@ -93,7 +96,7 @@ if($_SERVER['REQUEST_METHOD'] == 'POST'){
 	}
 	
 }else{
-	if (version_compare(PHP_VERSION, '5.3.0') < 0) {
+	if (version_compare(PHP_VERSION, '5.4.0') < 0) {
 		$Message = '你的PHP版本过低，可能会无法正常使用！<br />Your PHP version is too low, it may not work properly!';
 
 	}
@@ -137,7 +140,7 @@ function GetNextSQL() {
 	<meta charset="UTF-8" />
 	<meta content="True" name="HandheldFriendly" />
 	<title>Install - Carbon Forum</title>
-	<link href="../styles/default/theme/style.css" rel="stylesheet" type="text/css" />
+	<link href="../view/default/theme/style.css" rel="stylesheet" type="text/css" />
 </head>
 <body>
 	<!-- content wrapper start -->
@@ -279,7 +282,7 @@ foreach ($SupportedLanguages as $Key => $Value) {
 		<!-- footer start -->
 		<div class="Copyright">
 			<p>
-				Power By <a href="https://www.94cb.com" target="_blank">Carbon Forum</a> © 2006-2016
+				Powered By <a href="https://www.94cb.com" target="_blank">Carbon Forum</a> © 2006-2016
 			</p>
 		</div>
 		<!-- footer end -->

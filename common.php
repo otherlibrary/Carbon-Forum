@@ -3,7 +3,7 @@
  * Carbon-Forum
  * https://github.com/lincanbin/Carbon-Forum
  *
- * Copyright 2006-2015 Canbin Lin (lincanbin@hotmail.com)
+ * Copyright 2006-2016 Canbin Lin (lincanbin@hotmail.com)
  * http://www.94cb.com/
  *
  * Licensed under the Apache License, Version 2.0:
@@ -15,21 +15,21 @@
 逐渐替换为帕斯卡命名法
 数据库从设计上避免使用Join多表联查
 */
-define('CARBON_FORUM_VERSION', '5.0.1');
+define('CARBON_FORUM_VERSION', '5.6.1');
 
 //Initialize timer
-$MicroTime     = explode(' ', microtime());
+$MicroTime = explode(' ', microtime());
 $StartTime = $MicroTime[1] + $MicroTime[0];
 $TimeStamp = $_SERVER['REQUEST_TIME'];
-if((include __DIR__ . '/config.php') != 1){
+if ((include __DIR__ . '/config.php') != 1) {
 	//Bring user to installation
 	header("Location: install/");
 	exit(); //No errors
 }
-require(__DIR__ . '/language/' . ForumLanguage . '/common.php');
+require(LanguagePath . 'common.php');
 //Initialize PHP Data Object(Database)
-require(__DIR__ . '/includes/PDO.class.php');
-$DB     = new Db(DBHost, DBName, DBUser, DBPassword);
+require(LibraryPath . 'PDO.class.php');
+$DB     = new Db(DBHost, DBPort, DBName, DBUser, DBPassword);
 //Initialize MemCache(d) / Redis
 $MCache = false;
 if (EnableMemcache) {
@@ -42,7 +42,7 @@ if (EnableMemcache) {
 		}
 	} elseif (extension_loaded('memcache')) {
 		//MemCache
-		require(__DIR__ . "/includes/MemcacheMod.class.php");
+		require(LibraryPath . "MemcacheMod.class.php");
 		$MCache = new MemcacheMod(MemCacheHost, MemCachePort);
 	} elseif (extension_loaded('redis')) {
 		//Redis
@@ -51,7 +51,7 @@ if (EnableMemcache) {
 		$MCache->pconnect(MemCacheHost, MemCachePort);
 	} elseif (extension_loaded('xcache')) {
 		// XCache
-		require(__DIR__ . "/includes/XCache.class.php");
+		require(LibraryPath . "XCache.class.php");
 		$MCache = new XCache();
 	}
 }
@@ -62,12 +62,12 @@ if ($MCache) {
 	$Config = $MCache->get(MemCachePrefix . 'Config');
 }
 if (!$Config) {
-	foreach ($DB->query('SELECT ConfigName,ConfigValue FROM ' . $Prefix . 'config') as $ConfigArray) {
+	foreach ($DB->query('SELECT ConfigName,ConfigValue FROM ' . PREFIX . 'config') as $ConfigArray) {
 		$Config[$ConfigArray['ConfigName']] = $ConfigArray['ConfigValue'];
 	}
 	// Update
-	if($Config['Version'] != CARBON_FORUM_VERSION){
-		header("Location: update/");// Bring user to installation
+	if ($Config['Version'] != CARBON_FORUM_VERSION) {
+		header("Location: update/"); // Bring user to installation
 		exit(); //No errors
 	}
 	if ($MCache) {
@@ -76,14 +76,20 @@ if (!$Config) {
 }
 // 热门标签列表
 $HotTagsArray = json_decode($Config['CacheHotTags'], true);
-$HotTagsArray = $HotTagsArray?$HotTagsArray:array();
+$HotTagsArray = $HotTagsArray ? $HotTagsArray : array();
 
-$PHPSelf    = addslashes(htmlspecialchars($_SERVER['PHP_SELF'] ? $_SERVER['PHP_SELF'] : $_SERVER['SCRIPT_NAME']));
-$UrlPath    = $Config['WebsitePath'] ? str_ireplace($Config['WebsitePath'] . '/', '', substr($PHPSelf, 0, -4)) : substr($PHPSelf, 1, -4);
+$PHPSelf     = addslashes(htmlspecialchars($_SERVER['PHP_SELF'] ? $_SERVER['PHP_SELF'] : $_SERVER['SCRIPT_NAME']));
+$UrlPath = '';
 //For IIS ISAPI_Rewrite
-$RequestURI = isset($_SERVER['HTTP_X_REWRITE_URL']) ? $_SERVER['HTTP_X_REWRITE_URL'] : $_SERVER['REQUEST_URI'];
-$IsAjax = isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest';
+$RequestURI  = str_ireplace('?' . (isset($_SERVER['QUERY_STRING']) ? $_SERVER['QUERY_STRING'] : ''), '', (isset($_SERVER['HTTP_X_REWRITE_URL']) ? $_SERVER['HTTP_X_REWRITE_URL'] : $_SERVER['REQUEST_URI']));
+$IsAjax      = isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest';
 $CurProtocol = IsSSL() ? 'https://' : 'http://';
+
+$_HEAD = array();
+$_PUT = array();
+$_DELETE = array();
+$_OPTIONS = array();
+
 //消除低版本中魔术引号的影响
 if (version_compare(PHP_VERSION, '5.4.0') < 0 && get_magic_quotes_gpc()) {
 	function StripslashesDeep($var)
@@ -96,6 +102,7 @@ if (version_compare(PHP_VERSION, '5.4.0') < 0 && get_magic_quotes_gpc()) {
 	$_REQUEST = StripslashesDeep($_REQUEST);
 }
 
+
 // At某人并提醒他，使用时常在其前后加空格或回车，如 “@admin ”
 function AddingNotifications($Content, $TopicID, $PostID, $FilterUser = '')
 {
@@ -104,7 +111,7 @@ function AddingNotifications($Content, $TopicID, $PostID, $FilterUser = '')
 	1:新回复
 	2:@ 到我的
 	*/
-	global $Prefix, $DB, $MCache, $TimeStamp, $CurUserName;
+	global $DB, $MCache, $TimeStamp, $CurUserName;
 	//例外列表
 	$ExceptionUser = array(
 		$CurUserName
@@ -113,18 +120,18 @@ function AddingNotifications($Content, $TopicID, $PostID, $FilterUser = '')
 		$ExceptionUser[] = $FilterUser;
 	}
 	// 正则跟用户注册、登录保持一致
-	preg_match_all('/\B\@([a-zA-Z0-9\x80-\xff\-_]{4,20})/', strip_tags($Content,'<br><p>'), $out, PREG_PATTERN_ORDER);
+	preg_match_all('/\B\@([a-zA-Z0-9\x80-\xff\-_]{4,20})/', strip_tags($Content, '<br><p>'), $out, PREG_PATTERN_ORDER);
 	$TemporaryUserList = array_unique($out[1]); //排重
 	$TemporaryUserList = array_diff($TemporaryUserList, $ExceptionUser);
 	//对数组重新分配下标
 	sort($TemporaryUserList);
 	//var_dump($TemporaryUserList);
 	if ($TemporaryUserList) {
-		$UserList = $DB->row('SELECT ID FROM `' . $Prefix . 'users` WHERE `UserName` in (?)', $TemporaryUserList);
+		$UserList = $DB->row('SELECT ID FROM `' . PREFIX . 'users` WHERE `UserName` in (?)', $TemporaryUserList);
 		if ($UserList && count($UserList) <= 20) {
 			//最多@ 20人，防止骚扰
 			foreach ($UserList as $UserID) {
-				$DB->query('INSERT INTO `' . $Prefix . 'notifications`(`ID`,`UserID`, `UserName`, `Type`, `TopicID`, `PostID`, `Time`, `IsRead`) VALUES (null,?,?,?,?,?,?,?)', array(
+				$DB->query('INSERT INTO `' . PREFIX . 'notifications`(`ID`,`UserID`, `UserName`, `Type`, `TopicID`, `PostID`, `Time`, `IsRead`) VALUES (null,?,?,?,?,?,?,?)', array(
 					$UserID,
 					$CurUserName,
 					2,
@@ -133,7 +140,7 @@ function AddingNotifications($Content, $TopicID, $PostID, $FilterUser = '')
 					$TimeStamp,
 					0
 				));
-				$DB->query('UPDATE `' . $Prefix . 'users` SET `NewMessage` = NewMessage+1 WHERE ID = :UserID', array(
+				$DB->query('UPDATE `' . PREFIX . 'users` SET `NewMessage` = NewMessage+1 WHERE ID = :UserID', array(
 					'UserID' => $UserID
 				));
 				//清理内存缓存
@@ -149,7 +156,7 @@ function AddingNotifications($Content, $TopicID, $PostID, $FilterUser = '')
 //提示信息
 function AlertMsg($PageTitle, $Error, $StatusCode = 200)
 {
-	global $Lang, $CurProtocol, $RequestURI, $UrlPath, $IsAjax, $IsMobile, $IsApp, $Prefix, $DB, $Config, $HotTagsArray, $CurUserID, $CurUserName, $CurUserCode, $CurUserRole, $CurUserInfo, $FormHash, $StartTime, $PageMetaKeyword, $TemplatePath;
+	global $Lang, $CurProtocol, $RequestURI, $UrlPath, $IsAjax, $IsMobile, $IsApp, $DB, $Config, $HotTagsArray, $CurUserID, $CurUserName, $CurUserCode, $CurUserRole, $CurUserInfo, $FormHash, $StartTime, $PageMetaKeyword, $TemplatePath;
 	if (!$IsAjax) {
 		switch ($StatusCode) {
 			case 404:
@@ -245,19 +252,23 @@ function CurIP()
 {
 	$IsCDN = false; //未使用CDN时，应直接使用 $_SERVER['REMOTE_ADDR'] 以防止客户端伪造IP
 	$IP    = false;
-	if ($IsCDN && !empty($_SERVER["HTTP_CLIENT_IP"])) {
+	if (!empty($_SERVER["HTTP_CLIENT_IP"])) {
 		$IP = trim($_SERVER["HTTP_CLIENT_IP"]);
 	}
-	if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-		$IPs = explode(",", $_SERVER['HTTP_X_FORWARDED_FOR']);
+	if ($IsCDN && !empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+		$IPs = array_map("trim", explode(",", $_SERVER['HTTP_X_FORWARDED_FOR']));
 		if ($IP) {
-			array_unshift($IPs, $IP);
+			array_unshift($IPs, $IP);//插入头部而不是尾部，提升性能
 			$IP = FALSE;
 		}
 		//支持使用CDN后获取IP，理论上令 $IP = $IPs[0]; 即可，安全起见遍历过滤一次
-		for ($i = 0; $i < count($IPs); $i++) {
-			if (!preg_match("/^(10|172.16|172.17|172.18|172.19|172.20|172.21|172.22|172.23|172.24|172.25|172.26|172.27|172.28|172.29|172.30|172.31|192.168)/i", trim($IPs[$i]))) {
-				$IP = trim($IPs[$i]);
+		foreach ($IPs as $Key => $Value) {
+			/*
+			Fails validation for the following private IPv4 ranges: 10.0.0.0/8, 172.16.0.0/12 and 192.168.0.0/16.
+			Fails validation for the IPv6 addresses starting with FD or FC.
+			*/
+			if (filter_var($Value, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE)){
+				$IP = $Value;
 				break;
 			}
 		}
@@ -266,14 +277,44 @@ function CurIP()
 }
 
 
+//关键词过滤
+function Filter($Content)
+{
+	$FilteringWords = require(LibraryPath . "Filtering.words.config.php");
+	$Prohibited     = false;
+	$GagTime        = 0;
+	foreach ($FilteringWords as $SearchRegEx => $Rule) {
+
+		if (preg_match_all("/" . $SearchRegEx . "/i", $Content, $SearchWordsList)) {
+			//var_dump($SearchWordsList);
+			foreach ($SearchWordsList as $SearchWord) {
+				if (is_array($Rule)) {
+					$Content = str_ireplace($SearchWord, $Rule[0], $Content);
+					$Prohibited |= ($Rule[0] === false);
+					$GagTime = ($Rule[1] > $GagTime) ? $Rule[1] : $GagTime; //将规则中封禁时间最长的一个赏给用户
+				} else {
+					$Content = str_ireplace($SearchWord, $Rule, $Content);
+					//$Prohibited |= false;
+					//$GagTime = 0;
+				}
+			}
+		}
+	}
+	return array(
+		'Content' => $Content, //过滤后的内容
+		'Prohibited' => $Prohibited, //是否包含有禁止发布的词
+		'GagTime' => $GagTime //赏赐给用户的禁言时间（秒）
+	);
+}
+
 // 获得表单校验散列
 function FormHash()
 {
-	global $Config, $SALT;
-	if (array_key_exists('UserCode', $_COOKIE))
-		return substr(md5($Config['SiteName'] . $_COOKIE['UserCode'] . $SALT), 8, 8);
+	global $Config;
+	if (GetCookie('UserCode'))
+		return substr(md5($Config['SiteName'] . GetCookie('UserCode') . SALT), 8, 8);
 	else
-		return substr(md5($Config['SiteName'] . $SALT), 8, 8);
+		return substr(md5($Config['SiteName'] . SALT), 8, 8);
 }
 
 
@@ -333,24 +374,24 @@ function GetAvatar($UserID, $UserName, $Size = 'middle')
 function GetTagIcon($TagID, $Icon, $TagName, $Size = 'middle')
 {
 	global $Config;
-	return '<img src="' . $Config['WebsitePath'] . '/upload/tag/' . $Size . '/' . ($Icon?$TagID:'0') . '.png" alt="' . $TagName . '"/>';
+	return '<img src="' . $Config['WebsitePath'] . '/upload/tag/' . $Size . '/' . ($Icon ? $TagID : '0') . '.png" alt="' . $TagName . '"/>';
 }
 
 //获取Cookie
 function GetCookie($Key, $DefaultValue = false)
 {
 	global $Config, $IsApp;
-	if( !$IsApp ){
-		if (!empty($_COOKIE[$Config['CookiePrefix'] . $Key]) ){
+	if (!$IsApp) {
+		if (!empty($_COOKIE[$Config['CookiePrefix'] . $Key])) {
 			return $_COOKIE[$Config['CookiePrefix'] . $Key];
-		}else if ($DefaultValue) {
+		} else if ($DefaultValue) {
 			SetCookies(array(
 				$Key => $DefaultValue
 			));
 			return $DefaultValue;
 		}
-	}else{
-		return Request("Request","Auth".$Key, $DefaultValue);
+	} else {
+		return Request("Request", "Auth" . $Key, $DefaultValue);
 	}
 	return false;
 }
@@ -388,26 +429,28 @@ function IsName($string)
 
 
 //判断当前协议
-function IsSSL(){
-	if(!isset($_SERVER['HTTPS']))
+function IsSSL()
+{
+	if (!isset($_SERVER['HTTPS']))
 		return false;
-	if($_SERVER['HTTPS'] === 1){  //Apache
+	if ($_SERVER['HTTPS'] === 1) { //Apache
 		return true;
-	}elseif($_SERVER['HTTPS'] === 'on'){ //IIS
+	} elseif ($_SERVER['HTTPS'] === 'on') { //IIS
 		return true;
-	}elseif($_SERVER['SERVER_PORT'] == 443){ //其他
+	} elseif ($_SERVER['SERVER_PORT'] == 443) { //其他
 		return true;
 	}
-		return false;
+	return false;
 }
 
 
 //登出
-function LogOut(){
+function LogOut()
+{
 	global $CurUserID;
 	SetCookies(array(
 		'UserID' => '',
-		'CurUserExpirationTime' => '',
+		'UserExpirationTime' => '',
 		'UserCode' => ''
 	), 1);
 	$CurUserID = 0;
@@ -415,58 +458,58 @@ function LogOut(){
 
 
 //只有上一页下一页的分页
-function PaginationSimplified($PageUrl, $PageCount, $IsLastPage)
+function PaginationSimplified($PageUrl, $CurrentPage, $IsLastPage)
 {
 	global $Config, $Lang;
 	$PageUrl = $Config['WebsitePath'] . $PageUrl;
-	if ($PageCount != 1)
-		echo '<div class="float-left"><a class="previous-next" href="' . $PageUrl . ($PageCount - 1) . '">&lsaquo;&lsaquo;' . $Lang['Page_Previous'] . '</a></div>';
-	echo '<span class="currentpage">' . $PageCount . '</span>';
+	if ($CurrentPage != 1)
+		echo '<div class="float-left"><a class="previous-next" href="' . $PageUrl . ($CurrentPage - 1) . '">&lsaquo;&lsaquo;' . $Lang['Page_Previous'] . '</a></div>';
+	echo '<span class="currentpage">' . $CurrentPage . '</span>';
 	if (!$IsLastPage)
-		echo '<div class="float-right"><a href="' . $PageUrl . ($PageCount + 1) . '">' . $Lang['Page_Next'] . '&rsaquo;&rsaquo;</a></div>';
+		echo '<div class="float-right"><a href="' . $PageUrl . ($CurrentPage + 1) . '">' . $Lang['Page_Next'] . '&rsaquo;&rsaquo;</a></div>';
 }
 
 
 //分页
-function Pagination($PageUrl, $PageCount, $TotalPage)
+function Pagination($PageUrl, $CurrentPage, $TotalPage)
 {
 	if ($TotalPage <= 1)
 		return false;
 	global $Config, $Lang;
 	$PageUrl  = $Config['WebsitePath'] . $PageUrl;
-	$PageLast = $PageCount - 1;
-	$PageNext = $PageCount + 1;
-	//echo '<span id="pagenum"><span class="currentpage">' . $PageCount . '/' . $TotalPage . '</span>';
-	if ($PageCount != 1)
+	$PageLast = $CurrentPage - 1;
+	$PageNext = $CurrentPage + 1;
+	//echo '<span id="pagenum"><span class="currentpage">' . $CurrentPage . '/' . $TotalPage . '</span>';
+	if ($CurrentPage != 1)
 		echo '<div class="float-left"><a href="' . $PageUrl . $PageLast . '">&lsaquo;&lsaquo;' . $Lang['Page_Previous'] . '</a></div>';
-	if ($PageCount >= 6)
-		echo '<a href="' . $PageUrl . '1">1</a>';
-	if ($PageCount <= 4) {
+	if ($CurrentPage <= 4) {
 		$PageiStart = 1;
-	} else if ($PageCount >= ($TotalPage - 3)) {
+	} else if ($CurrentPage >= ($TotalPage - 3)) {
 		$PageiStart = $TotalPage - 7;
 	} else {
-		$PageiStart = $PageCount - 3;
+		$PageiStart = $CurrentPage - 3;
 	}
 	
-	if ($PageCount + 3 >= $TotalPage) {
+	if ($CurrentPage + 3 >= $TotalPage) {
 		$PageiEnd = $TotalPage;
-	} else if ($PageCount <= 3 && $TotalPage >= 8) {
+	} else if ($CurrentPage <= 3 && $TotalPage >= 8) {
 		$PageiEnd = 8;
 	} else {
-		$PageiEnd = $PageCount + 3;
+		$PageiEnd = $CurrentPage + 3;
 	}
+	if ($CurrentPage >= 5 && $PageiStart > 1)
+		echo '<a href="' . $PageUrl . '1">1</a>';
 	for ($Pagei = $PageiStart; $Pagei <= $PageiEnd; $Pagei++) {
-		if ($PageCount == $Pagei) {
+		if ($CurrentPage == $Pagei) {
 			echo '<span class="currentpage">' . $Pagei . '</span>';
 		} elseif ($Pagei > 0 && $Pagei <= $TotalPage) {
 			echo '<a href="' . $PageUrl . $Pagei . '">' . $Pagei . '</a>';
 		}
 	}
-	if ($PageCount + 3 < $TotalPage) {
+	if ($CurrentPage + 3 < $TotalPage && $PageiEnd < $TotalPage) {
 		echo '<a href="' . $PageUrl . $TotalPage . '">' . $TotalPage . '</a>';
 	}
-	if ($PageCount != $TotalPage) {
+	if ($CurrentPage != $TotalPage) {
 		echo '<div class="float-right"><a href="' . $PageUrl . $PageNext . '">' . $Lang['Page_Next'] . '&rsaquo;&rsaquo;</a></div>';
 	}
 	//echo '&nbsp;&nbsp;&nbsp;<input type="text" onkeydown="JavaScript:if((event.keyCode==13)&&(this.value!=\'\')){window.location=\''.$PageUrl.'\'+this.value;}" onkeyup="JavaScript:if(isNaN(this.value)){this.value=\'\';}" size=4 title="请输入要跳转到第几页,然后按下回车键">';
@@ -474,11 +517,19 @@ function Pagination($PageUrl, $PageCount, $TotalPage)
 }
 
 
+//跳转
+function Redirect($URI = '', $ExitCode = 0)
+{
+	global $Config;
+	header('location: ' . $Config['WebsitePath'] . '/' . $URI);
+	exit($ExitCode);
+}
+
 //来源检查
 function ReferCheck($UserHash)
 {
 	global $IsApp;
-	if ( !$IsApp && (empty($_SERVER['HTTP_REFERER']) || $UserHash != FormHash() || preg_replace("/https?:\/\/([^\:\/]+).*/i", "\\1", $_SERVER['HTTP_REFERER']) !== preg_replace("/([^\:]+).*/", "\\1", $_SERVER['HTTP_HOST'])) )
+	if (!$IsApp && (empty($_SERVER['HTTP_REFERER']) || $UserHash != FormHash() || preg_replace("/https?:\/\/([^\:\/]+).*/i", "\\1", $_SERVER['HTTP_REFERER']) !== preg_replace("/([^\:]+).*/", "\\1", $_SERVER['HTTP_HOST'])))
 		return false;
 	else
 		return true;
@@ -487,12 +538,22 @@ function ReferCheck($UserHash)
 //表单获取
 function Request($Type, $Key, $DefaultValue = '')
 {
+	global $_PUT, $_DELETE, $_OPTIONS;
 	switch ($Type) {
 		case 'Get':
 			return isset($_GET[$Key]) ? trim($_GET[$Key]) : $DefaultValue;
 			break;
 		case 'Post':
 			return isset($_POST[$Key]) ? trim($_POST[$Key]) : $DefaultValue;
+			break;
+		case 'Put':
+			return isset($_PUT[$Key]) ? trim($_PUT[$Key]) : $DefaultValue;
+			break;
+		case 'Delete':
+			return isset($_DELETE[$Key]) ? trim($_DELETE[$Key]) : $DefaultValue;
+			break;
+		case 'Options':
+			return isset($_OPTIONS[$Key]) ? trim($_OPTIONS[$Key]) : $DefaultValue;
 			break;
 		default:
 			return isset($_REQUEST[$Key]) ? trim($_REQUEST[$Key]) : $DefaultValue;
@@ -511,7 +572,7 @@ function SetStyle($PathName, $StyleName)
 		header('Access-Control-Allow-Origin: *');
 		header('Content-Type: application/json; charset=utf-8');
 	}
-	$TemplatePath = __DIR__ . '/styles/' . $PathName . '/template/';
+	$TemplatePath = __DIR__ . '/view/' . $PathName . '/template/';
 	$Style        = $StyleName;
 }
 
@@ -519,12 +580,12 @@ function SetStyle($PathName, $StyleName)
 //批量设置Cookie
 function SetCookies($CookiesArray, $Expires = 0)
 {
-	global $Config;
+	global $TimeStamp, $Config;
 	foreach ($CookiesArray as $key => $value) {
 		if (!$Expires)
 			setcookie($Config['CookiePrefix'] . $key, $value, 0, $Config['WebsitePath'] . '/', null, false, true);
 		else
-			setcookie($Config['CookiePrefix'] . $key, $value, time() + 86400 * $Expires, $Config['WebsitePath'] . '/', null, false, true);
+			setcookie($Config['CookiePrefix'] . $key, $value, $TimeStamp + 86400 * $Expires, $Config['WebsitePath'] . '/', null, false, true);
 	}
 }
 
@@ -535,12 +596,13 @@ function TagsDiff($Arr1, $Arr2)
 	global $Config;
 	$Arr2 = array_change_key_case(array_flip($Arr2), CASE_LOWER); //flip，排重，Key有Hash索引，速度更快
 	foreach ($Arr1 as $Key => $Item) {
-		if (mb_strlen($Item, "UTF-8") > $Config["MaxTagChars"] || array_key_exists(strtolower(trim($Item)), $Arr2) || strpos("|", $Item) || !preg_match('/^[a-zA-Z0-9\x80-\xff\-_ ]{1,' . $Config['MaxTagChars'] . '}$/i', $Item)) {
+		if (mb_strlen($Item, "UTF-8") > $Config["MaxTagChars"] || isset($Arr2[strtolower(trim($Item))]) || strpos("|", $Item) || !preg_match('/^[a-zA-Z0-9\x80-\xff\-_\s]{1,' . $Config['MaxTagChars'] . '}$/i', $Item) || $Item != Filter($Item)['Content']) {
 			unset($Arr1[$Key]);
 		} else {
 			$Arr1[$Key] = htmlspecialchars(trim($Arr1[$Key])); //XSS
 		}
 	}
+	sort($Arr1);
 	return $Arr1;
 }
 
@@ -548,10 +610,10 @@ function TagsDiff($Arr1, $Arr2)
 //修改系统设置
 function UpdateConfig($NewConfig)
 {
-	global $Prefix, $DB, $Config, $MCache;
+	global $DB, $Config, $MCache;
 	if ($NewConfig) {
 		foreach ($NewConfig as $Key => $Value) {
-			$DB->query("UPDATE `" . $Prefix . "config` SET ConfigValue=? WHERE ConfigName=?", array(
+			$DB->query("UPDATE `" . PREFIX . "config` SET ConfigValue=? WHERE ConfigName=?", array(
 				$Value,
 				$Key
 			));
@@ -571,7 +633,7 @@ function UpdateConfig($NewConfig)
 //修改用户资料
 function UpdateUserInfo($NewUserInfo, $UserID = 0)
 {
-	global $Prefix, $DB, $CurUserID, $CurUserInfo, $MCache;
+	global $DB, $CurUserID, $CurUserInfo, $MCache;
 	if ($UserID == 0) {
 		$UserID = $CurUserID;
 	}
@@ -581,11 +643,11 @@ function UpdateUserInfo($NewUserInfo, $UserID = 0)
 			$StringBindParam .= $Key . ' = :' . $Key . ',';
 		}
 		$StringBindParam = substr($StringBindParam, 0, -1);
-		$Result          = $DB->query('UPDATE `' . $Prefix . 'users` SET ' . $StringBindParam . ' WHERE ID = :UserID', array_merge($NewUserInfo, array(
+		$Result          = $DB->query('UPDATE `' . PREFIX . 'users` SET ' . $StringBindParam . ' WHERE ID = :UserID', array_merge($NewUserInfo, array(
 			'UserID' => $UserID
 		)));
 		if ($MCache) {
-			$MCache->set(MemCachePrefix . 'UserInfo_' . $UserID, $DB->row("SELECT * FROM " . $Prefix . "users WHERE ID = :UserID", array(
+			$MCache->set(MemCachePrefix . 'UserInfo_' . $UserID, $DB->row("SELECT * FROM " . PREFIX . "users WHERE ID = :UserID", array(
 				"UserID" => $UserID
 			)), 86400);
 		}
@@ -705,7 +767,8 @@ function XssEscape($html)
 				'script',
 				'eval',
 				'behaviour',
-				'expression'
+				'expression',
+				'data'
 			); //style, class
 			$skipstr  = implode('|', $skipkeys);
 			$value    = preg_replace(array(
@@ -760,7 +823,7 @@ function dhtmlspecialchars($string, $flags = null)
 	return $string;
 }
 
-$UserAgent = array_key_exists('HTTP_USER_AGENT', $_SERVER) ? strtolower($_SERVER['HTTP_USER_AGENT']) : '';
+$UserAgent = isset($_SERVER['HTTP_USER_AGENT']) ? strtolower($_SERVER['HTTP_USER_AGENT']) : '';
 if ($UserAgent) {
 	$IsSpider = preg_match('/(bot|crawl|spider|slurp|sohu-search|lycos|robozilla|google)/i', $UserAgent);
 	$IsMobile = preg_match('/(iPod|iPhone|Android|Opera Mini|BlackBerry|webOS|UCWEB|Blazer|PSP)/i', $UserAgent);
@@ -776,42 +839,30 @@ $IsApp = $_SERVER['HTTP_HOST'] == $Config['AppDomainName'] ? true : false;
  * api: API
  */
 if ($IsApp) {
-	$TemplatePath = __DIR__ . '/styles/api/template/';
+	$TemplatePath = __DIR__ . '/view/api/template/';
 	$Style        = 'API';
 	header('Access-Control-Allow-Origin: *');
 	header('Content-Type: application/json');
 	//API鉴权
-	$SignatureKey = Request("Request","SKey");
-	$SignatureValue = Request("Request","SValue");
-	$SignatureTime = intval(Request("Request","STime"));
-	if(
-		!$SignatureTime || !$SignatureKey || !$SignatureValue || 
-		empty($APISignature[$SignatureKey]) ||
-		abs($SignatureTime-$TimeStamp) > 600 ||
-		!HashEquals($SignatureValue, md5($SignatureKey.$APISignature[$SignatureKey].$SignatureTime))
-	){
+	$SignatureKey   = Request("Request", "SKey");
+	$SignatureValue = Request("Request", "SValue");
+	$SignatureTime  = intval(Request("Request", "STime"));
+	if (!$SignatureTime || !$SignatureKey || !$SignatureValue || empty($APISignature[$SignatureKey]) || abs($SignatureTime - $TimeStamp) > 600 || !HashEquals($SignatureValue, md5($SignatureKey . $APISignature[$SignatureKey] . $SignatureTime))) {
 		AlertMsg('403', 'Forbidden', 403);
 	}
-} elseif ($_SERVER['HTTP_HOST'] == $Config['MobileDomainName']) {
-	$TemplatePath = __DIR__ . '/styles/mobile/template/';
+} elseif ($_SERVER['HTTP_HOST'] == $Config['MobileDomainName'] || (!$Config['MobileDomainName'] && $IsMobile)) {
+	$TemplatePath = __DIR__ . '/view/mobile/template/';
 	$Style        = 'Mobile';
 	header('X-Frame-Options: SAMEORIGIN');
 } else {
-	$TemplatePath = __DIR__ . '/styles/default/template/';
+	$TemplatePath = __DIR__ . '/view/default/template/';
 	$Style        = 'Default';
 	header('X-Frame-Options: SAMEORIGIN');
 	//header('X-XSS-Protection: 1; mode=block');
 	//X-XSS-Protection may cause some issues in dashboard
 }
-$CurView = GetCookie('View', $IsMobile ? 'mobile' : 'desktop');
-if ($Config['MobileDomainName'] && $_SERVER['HTTP_HOST'] != $Config['MobileDomainName'] && $CurView == 'mobile' && !$IsApp) {
-	//如果是手机，则跳转到移动版，暂时关闭
-	header("HTTP/1.1 302 Moved Temporarily");
-	header("Status: 302 Moved Temporarily");
-	header('Location: ' . $CurProtocol . $Config['MobileDomainName'] . $RequestURI);
-	exit();
-}
 
+$CurView = GetCookie('View', $IsMobile ? 'mobile' : 'desktop');
 $CurIP    = CurIP();
 $FormHash = FormHash();
 // 限制不能打开.php的网址
@@ -820,19 +871,18 @@ if (strpos($RequestURI, '.php')) {
 }
 
 
-
 $CurrentDate = date('Y-m-d');
 if ($Config['DaysDate'] != $CurrentDate) {
 	if (!strtotime($Config['DaysDate'])) {
 		$Config['DaysDate'] = $CurrentDate;
 	}
-	$DB->query('INSERT INTO `' . $Prefix . 'statistics` 
+	$DB->query('INSERT INTO `' . PREFIX . 'statistics` 
 		(`DaysUsers`, `DaysPosts`, `DaysTopics`, `TotalUsers`, `TotalPosts`, `TotalTopics`, `DaysDate`, `DateCreated`) 
 		SELECT 
 		:DaysUsers, :DaysPosts, :DaysTopics, :TotalUsers, :TotalPosts, :TotalTopics, :DaysDate, :DateCreated 
 		FROM dual  
 		WHERE NOT EXISTS(  
-			SELECT *  FROM `' . $Prefix . 'statistics`  
+			SELECT *  FROM `' . PREFIX . 'statistics`  
 			WHERE DaysDate = :DaysDate2
 		)
 		', array(
@@ -851,8 +901,8 @@ if ($Config['DaysDate'] != $CurrentDate) {
 		'DaysTopics' => 0,
 		'DaysPosts' => 0,
 		'DaysUsers' => 0,
-		'CacheHotTags' => json_encode($DB->query('SELECT ID,Name,Icon,TotalPosts,Followers FROM ' . $Prefix . 'tags 
-			WHERE IsEnabled=1 
+		'CacheHotTags' => json_encode($DB->query('SELECT ID,Name,Icon,TotalPosts,Followers FROM ' . PREFIX . 'tags 
+			WHERE IsEnabled=1 AND TotalPosts>0
 			ORDER BY TotalPosts DESC 
 			LIMIT ' . $Config['TopicsPerPage']))
 	));
@@ -870,7 +920,7 @@ if ($CurUserExpirationTime > $TimeStamp && $CurUserExpirationTime < ($TimeStamp 
 		$TempUserInfo = $MCache->get(MemCachePrefix . 'UserInfo_' . $CurUserID);
 	}
 	if (!$TempUserInfo) {
-		$TempUserInfo = $DB->row("SELECT * FROM " . $Prefix . "users WHERE ID = :UserID", array(
+		$TempUserInfo = $DB->row("SELECT * FROM " . PREFIX . "users WHERE ID = :UserID", array(
 			"UserID" => $CurUserID
 		));
 		
@@ -879,7 +929,7 @@ if ($CurUserExpirationTime > $TimeStamp && $CurUserExpirationTime < ($TimeStamp 
 		}
 	}
 	//Using hash_equals() in the future
-	if ($TempUserInfo && HashEquals(md5($TempUserInfo['Password'] . $TempUserInfo['Salt'] . $CurUserExpirationTime . $SALT), $CurUserCode)) {
+	if ($TempUserInfo && HashEquals(md5($TempUserInfo['Password'] . $TempUserInfo['Salt'] . $CurUserExpirationTime . SALT), $CurUserCode)) {
 		$CurUserName = $TempUserInfo['UserName'];
 		$CurUserRole = $TempUserInfo['UserRoleID'];
 		$CurUserInfo = $TempUserInfo;

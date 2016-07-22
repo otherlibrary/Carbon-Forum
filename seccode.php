@@ -3,9 +3,9 @@ error_reporting(0);
 require(__DIR__ . "/config.php");
 session_start();
 //session_register('VerificationCode');
-$_SESSION[$Prefix . 'VerificationCode'] = '';
-$width                                  = '58'; //图片宽
-$height                                 = '27'; //图片高
+$_SESSION[PREFIX . 'VerificationCode'] = '';
+$width                                  = '60'; //图片宽
+$height                                 = '30'; //图片高
 $textall = array_merge_recursive(range('0', '9'));
 $code = '';
 for ($i = 0; $i < 4; $i++) {
@@ -14,7 +14,7 @@ for ($i = 0; $i < 4; $i++) {
 	$code .= $randtext;
 }
 
-$_SESSION[$Prefix . 'VerificationCode'] = $code;
+$_SESSION[PREFIX . 'VerificationCode'] = $code;
 
 header("Expires: -1");
 header("Cache-Control: no-store, private, post-check=0, pre-check=0, max-age=0", FALSE);
